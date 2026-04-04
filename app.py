@@ -454,14 +454,40 @@ This demo simulates both approaches using simplified examples from environmental
         results.sort(key=lambda x: x[1], reverse=True)
         return results
 
+    if L == "cs":
+        st.markdown("""
+#### Jak tato ukázka funguje?
+Máme **10 fiktivních vědeckých článků** (viz výsledky níže). Každý má přiřazený vektor čísel — jeho "otisk významu".
+Když zadáte dotaz, porovnáváme ho s těmito články dvěma způsoby:
+- **Klasicky** — hledáme přesnou shodu slov mezi dotazem a názvem článku
+- **Sémanticky** — porovnáváme vektory (kosinová podobnost) — najde i články, které neobsahují přesná slova z dotazu, ale mají podobný význam
+        """)
+    else:
+        st.markdown("""
+#### How does this demo work?
+We have **10 fictional research articles** (see results below). Each has an assigned vector of numbers — its "meaning fingerprint".
+When you enter a query, we compare it against these articles in two ways:
+- **Keyword** — we look for exact word matches between the query and article title
+- **Semantic** — we compare vectors (cosine similarity) — finds articles even without exact query words, if the meaning is similar
+        """)
+
+    with st.expander("📚 " + ("Zobrazit databázi článků (10 dokumentů)" if L == "cs" else "Show article database (10 documents)"), expanded=False):
+        if L == "cs":
+            st.caption("Toto jsou fiktivní články, proti kterým hledáme. Každý má přiřazený vektor — čísla v hranatých závorkách ukazují jeho 'otisk významu' v 8 dimenzích.")
+        else:
+            st.caption("These are fictional articles we search against. Each has an assigned vector — numbers in brackets show its 'meaning fingerprint' across 8 dimensions.")
+        for doc_name, vec in DOCUMENTS.items():
+            vec_str = ", ".join(f"{v:.1f}" for v in vec)
+            st.markdown(f"- **{doc_name}** `[{vec_str}]`")
+
     selected_query = st.selectbox("🔎 " + ("Vyberte dotaz:" if L == "cs" else "Select a query:"), list(PRESET_QUERIES.keys()))
 
     if L == "cs":
         st.markdown("#### Nebo si upravte vektor dotazu ručně:")
-        st.caption("Každý slider představuje jednu dimenzi významu. Posuňte je a sledujte, jak se mění výsledky.")
+        st.caption("Každý slider představuje jednu dimenzi významu. Posuňte je a sledujte, jak se mění výsledky vyhledávání v pravém sloupci.")
     else:
         st.markdown("#### Or adjust the query vector manually:")
-        st.caption("Each slider represents one dimension of meaning. Move them and watch the results change.")
+        st.caption("Each slider represents one dimension of meaning. Move them and watch how search results change in the right column.")
 
     query_vec = PRESET_QUERIES[selected_query].copy()
     cols = st.columns(8)
@@ -940,23 +966,60 @@ Enter text and see how much it would cost across models. Try rewriting in Englis
     st.markdown(render_tokens_html(tokens), unsafe_allow_html=True)
     st.metric("Tokens", n_tokens)
 
+    if L == "cs":
+        st.markdown("""
+---
+#### Odhadovaný výstup
+AI účtuje zvlášť za **vstup** (text, který pošlete) a **výstup** (odpověď, kterou vygeneruje). Výstup je obvykle dražší. Nastavte, jak dlouhou odpověď očekáváte:
+- **100-300 tokenů** ≈ krátká odpověď (1 odstavec)
+- **500-1000 tokenů** ≈ střední odpověď (půl stránky)
+- **2000-4000 tokenů** ≈ dlouhá odpověď (1-2 stránky)
+        """)
+    else:
+        st.markdown("""
+---
+#### Estimated output
+AI charges separately for **input** (the text you send) and **output** (the response it generates). Output is usually more expensive. Set how long a response you expect:
+- **100-300 tokens** ≈ short answer (1 paragraph)
+- **500-1000 tokens** ≈ medium answer (half a page)
+- **2000-4000 tokens** ≈ long answer (1-2 pages)
+        """)
     est_output = st.slider(
         ("Odhadovaný výstup (tokenů):" if L == "cs" else "Estimated output (tokens):"),
         100, 4000, 500, 100)
 
     st.markdown(f"### {'Cena podle modelu' if L == 'cs' else 'Cost by Model'}")
+    if L == "cs":
+        st.caption(f"Váš vstup: **{n_tokens} tokenů** + odhadovaný výstup: **{est_output} tokenů** = celkem **{n_tokens + est_output} tokenů** na jeden dotaz.")
+    else:
+        st.caption(f"Your input: **{n_tokens} tokens** + estimated output: **{est_output} tokens** = total **{n_tokens + est_output} tokens** per query.")
+
     rows = []
     for model, (inp_price, out_price) in MODELS.items():
         inp_cost = n_tokens / 1_000_000 * inp_price
         out_cost = est_output / 1_000_000 * out_price
         total = inp_cost + out_cost
+        cost_1000 = total * 1000
         rows.append({
             "Model": model,
-            f"{'Vstup' if L == 'cs' else 'Input'} ($/1M tok)": f"${inp_price:.2f}",
-            f"{'Výstup' if L == 'cs' else 'Output'} ($/1M tok)": f"${out_price:.2f}",
-            f"{'Celkem' if L == 'cs' else 'Total'}": f"${total:.6f}",
+            f"{'Cena vstupu' if L == 'cs' else 'Input price'} ($/1M)": f"${inp_price:.3f}",
+            f"{'Cena výstupu' if L == 'cs' else 'Output price'} ($/1M)": f"${out_price:.2f}",
+            f"{'1 dotaz' if L == 'cs' else '1 query'}": f"${total:.4f}",
+            f"{'1000 dotazů' if L == 'cs' else '1000 queries'}": f"${cost_1000:.2f}",
         })
     st.dataframe(rows, use_container_width=True)
+
+    # Highlight cheapest vs most expensive
+    totals = {m: (n_tokens / 1e6 * ip + est_output / 1e6 * op) for m, (ip, op) in MODELS.items()}
+    cheapest = min(totals, key=totals.get)
+    priciest = max(totals, key=totals.get)
+    ratio = totals[priciest] / totals[cheapest] if totals[cheapest] > 0 else 0
+    if L == "cs":
+        st.markdown(f"**Nejlevnější:** {cheapest} (${totals[cheapest]:.4f}/dotaz) | **Nejdražší:** {priciest} (${totals[priciest]:.4f}/dotaz) — **{ratio:.0f}x** dražší")
+        st.caption("↕️ Posuňte slider 'Odhadovaný výstup' výše a uvidíte, jak roste cena — výstupní tokeny jsou dražší než vstupní.")
+    else:
+        st.markdown(f"**Cheapest:** {cheapest} (${totals[cheapest]:.4f}/query) | **Most expensive:** {priciest} (${totals[priciest]:.4f}/query) — **{ratio:.0f}x** more expensive")
+        st.caption("↕️ Move the 'Estimated output' slider higher and watch the price grow — output tokens cost more than input tokens.")
 
     if L == "cs":
         st.caption("Ceny jsou přibližné, platné k březnu 2026. Skutečné ceny závisí na konkrétním API plánu.")
@@ -1035,17 +1098,35 @@ The context window has a **token limit**. Once exceeded, older parts of the conv
 
     st.markdown(f"### {'Co se vejde do kontextu?' if L == 'cs' else 'What Fits in the Context?'}")
 
+    if L == "cs":
+        st.markdown("""
+Vyberte model a podívejte se, kolik různých typů textu se vejde do jeho kontextového okna.
+
+- **Tokenů** = kolik tokenů daný text přibližně zabere
+- **Kolikrát se vejde** = kolikrát byste mohli vložit takový text do jedné konverzace
+- **% kontextu** = jakou část kontextového okna zabere jeden takový text
+        """)
+    else:
+        st.markdown("""
+Select a model and see how much of different text types fits in its context window.
+
+- **Tokens** = approximate token count for that text
+- **How many times it fits** = how many times you could paste such text in one conversation
+- **% of context** = what portion of the context window one such text takes
+        """)
+
     selected_model = st.selectbox("Model:", list(models_ctx.keys()))
     ctx_size = models_ctx[selected_model]
 
+    fits_label = "Kolikrát se vejde" if L == "cs" else "How many times it fits"
     ref_data = []
-    for name, tokens in references:
-        fits = ctx_size // tokens
-        pct = tokens / ctx_size * 100
+    for name, toks in references:
+        fits = ctx_size // toks
+        pct = toks / ctx_size * 100
         ref_data.append({
-            ("Text" if L == "en" else "Text"): name,
-            ("Tokenů" if L == "cs" else "Tokens"): f"{tokens:,}",
-            (f"Vejde se {fits}x" if L == "cs" else f"Fits {fits}x"): fits,
+            "Text": name,
+            ("Tokenů" if L == "cs" else "Tokens"): f"{toks:,}",
+            fits_label: fits,
             ("% kontextu" if L == "cs" else "% of context"): f"{pct:.1f}%",
         })
     st.dataframe(ref_data, use_container_width=True)
@@ -1270,7 +1351,7 @@ elif page_idx == 9:
 Masarykova univerzita vyžaduje **transparentní deklaraci** použití AI.
 Nezveřejněné použití AI se posuzuje jako plagiát.
 
-🔗 [Prohlášení MU k aplikaci AI](https://www.muni.cz/o-univerzite/uredni-deska/prohlaseni-k-aplikaci-ai)
+🔗 [Doporučení k využívání AI ve výuce (MU)](https://kvalita.muni.cz/kvalita-na-mu/kvalita-vyuky/doporuceni-k-vyuzivani-umele-inteligence-ve-vyuce)
             """)
         else:
             st.markdown("""
@@ -1292,7 +1373,7 @@ Nezveřejněné použití AI se posuzuje jako plagiát.
 Masaryk University requires **transparent declaration** of AI use.
 Undisclosed AI use is treated as plagiarism.
 
-🔗 [MU Statement on AI Application](https://www.muni.cz/en/about-us/official-notice-board/statement-on-the-application-of-ai)
+🔗 [MU Recommendations on AI in Teaching](https://kvalita.muni.cz/kvalita-na-mu/kvalita-vyuky/doporuceni-k-vyuzivani-umele-inteligence-ve-vyuce)
             """)
 
     with tabs[4]:
