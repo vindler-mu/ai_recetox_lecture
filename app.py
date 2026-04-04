@@ -356,11 +356,15 @@ Try moving the slider and watch how the probability distribution changes.
 
     if temp <= 0.3:
         label = "🔵 DETERMINISTICKÁ" if L == "cs" else "🔵 DETERMINISTIC"
+        hint = "Téměř vždy stejná odpověď. Vhodné pro: překlady, sumarizace, faktické dotazy." if L == "cs" else "Almost always the same answer. Good for: translations, summaries, factual queries."
     elif temp <= 0.7:
         label = "🟡 VYVÁŽENÁ" if L == "cs" else "🟡 BALANCED"
+        hint = "Dobrá rovnováha přesnosti a variability. Vhodné pro většinu úloh." if L == "cs" else "Good balance of accuracy and variability. Suitable for most tasks."
     else:
         label = "🔴 KREATIVNÍ" if L == "cs" else "🔴 CREATIVE"
+        hint = "Častěji vybírá neočekávaná slova. Vhodné pro: brainstorming, kreativní psaní. Riziko: méně přesné." if L == "cs" else "More often picks unexpected words. Good for: brainstorming, creative writing. Risk: less precise."
     st.markdown(f"#### {label}")
+    st.caption(hint)
 
     chart_data = pd.DataFrame({
         ("Slovo" if L == "cs" else "Word"): tokens,
@@ -481,7 +485,7 @@ This demo simulates both approaches using simplified examples from environmental
 
     with col2:
         st.markdown(f"#### 🧠 {'Sémantické vyhledávání' if L == 'cs' else 'Semantic Search'}")
-        sem_results = sorted([(t, cosine_similarity(query_vec, v)) for t, v in DOCUMENTS.items()], key=lambda x: x[1], reverse=True)
+        sem_results = sorted([(doc_title, cosine_similarity(query_vec, v)) for doc_title, v in DOCUMENTS.items()], key=lambda x: x[1], reverse=True)
         for title, sim in sem_results[:5]:
             color = "green" if sim > 0.90 else "orange" if sim > 0.80 else "red"
             st.markdown(f"- :{color}[**{sim:.1%}**] — {title}")
@@ -495,6 +499,24 @@ This demo simulates both approaches using simplified examples from environmental
     selected_doc = st.selectbox("📄", list(DOCUMENTS.keys()), label_visibility="collapsed")
     embed_data = pd.DataFrame({"Dim": DIMENSIONS, "Value": DOCUMENTS[selected_doc]})
     st.bar_chart(embed_data, x="Dim", y="Value")
+
+    st.markdown("---")
+    if L == "cs":
+        st.markdown("""
+### Co z toho plyne pro praxi?
+- **Chemické názvy, CAS čísla, IUPAC** → klasické vyhledávání je přesnější (přesná shoda)
+- **Konceptuální dotazy** ("vliv na zdraví", "metody remediace") → sémantika je silnější
+- **Ideální řešení**: hybridní přístup (BM25 + sémantika) — přesně to dělají moderní nástroje (Scopus AI, Semantic Scholar)
+- **Pozor**: sémantické výsledky se mohou lišit při opakovaném hledání — nejsou deterministické
+        """)
+    else:
+        st.markdown("""
+### What Does This Mean in Practice?
+- **Chemical names, CAS numbers, IUPAC** → classic search is more precise (exact match)
+- **Conceptual queries** ("health effects", "remediation methods") → semantics is stronger
+- **Ideal solution**: hybrid approach (BM25 + semantics) — exactly what modern tools do (Scopus AI, Semantic Scholar)
+- **Note**: semantic results may differ when repeated — they are not deterministic
+        """)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -620,8 +642,11 @@ Can you tell hallucination from fact? The following texts look like typical AI r
                     st.rerun()
         else:
             is_correct = st.session_state.quiz_user_said_h == q["answer"]
+            if not st.session_state.get("quiz_scored", False):
+                if is_correct:
+                    st.session_state.quiz_score += 1
+                st.session_state.quiz_scored = True
             if is_correct:
-                st.session_state.quiz_score += 1
                 st.success(f"✅ {'Správně!' if L == 'cs' else 'Correct!'} {q[f'expl_{L}']}")
             else:
                 st.error(f"❌ {'Špatně.' if L == 'cs' else 'Wrong.'} {q[f'expl_{L}']}")
@@ -633,6 +658,7 @@ Can you tell hallucination from fact? The following texts look like typical AI r
             if st.button("➡️ " + ("Další" if L == "cs" else "Next")):
                 st.session_state.quiz_index += 1
                 st.session_state.quiz_answered = False
+                st.session_state.quiz_scored = False
                 st.rerun()
     else:
         score = st.session_state.quiz_score
@@ -651,6 +677,7 @@ Can you tell hallucination from fact? The following texts look like typical AI r
             st.session_state.quiz_index = 0
             st.session_state.quiz_score = 0
             st.session_state.quiz_answered = False
+            st.session_state.quiz_scored = False
             random.shuffle(st.session_state.quiz_order)
             st.rerun()
 
@@ -719,6 +746,11 @@ There is no single "correct" way to prompt — but there are proven techniques t
          "good_en": "PURPOSE: Find analytical method for emerging pollutants in wastewater\nROLE: Analytical chemist, 15 years experience, LC-MS\nOBJECTIVE: Comparison table of 4 methods (LOD, LOQ, repeatability)\nMETHOD: Define criteria, compare, recommend\nPARAMETERS: Table, PPCPs, years 2020-2026\nTONE: Professional, concise"},
     ]
 
+    if L == "cs":
+        st.caption("👇 Klikněte na techniku pro zobrazení příkladu slabého vs. silného promptu.")
+    else:
+        st.caption("👇 Click on a technique to see a weak vs. strong prompt example.")
+
     for tech in TECHNIQUES:
         with st.expander(f"{tech['icon']} {tech['name']} — {tech[f'when_{L}']}"):
             c1, c2 = st.columns(2)
@@ -785,6 +817,13 @@ elif page_idx == 6:
         })
         st.bar_chart(df, x="Region", y=[df.columns[1], df.columns[2]])
 
+        if L == "cs":
+            st.warning("**Důsledek:** Když se zeptáte AI \"Které regiony mají největší problémy s kontaminací?\", odpoví na základě počtu publikací, ne reality. Regiony s méně vědeckou produkcí budou systematicky podreprezentovány.")
+            st.markdown("**Doporučení:** U geograficky specifických otázek vždy ověřujte v lokálních zdrojích. AI odpovědi reflektují distribuci publikací, ne skutečný stav.")
+        else:
+            st.warning("**Consequence:** When you ask AI \"Which regions have the biggest contamination problems?\", it answers based on publication counts, not reality. Regions with less scientific output will be systematically underrepresented.")
+            st.markdown("**Recommendation:** For geographically specific questions, always verify in local sources. AI responses reflect publication distribution, not actual conditions.")
+
     with tab2:
         st.markdown(f"### {'Zastoupení jazyků v trénovacích datech' if L == 'cs' else 'Language Representation in Training Data'}")
         langs = ["English", "Chinese", "German", "French", "Spanish", "Russian", "Japanese", "Czech", "Slovak"] if L == "en" else ["Angličtina", "Čínština", "Němčina", "Francouz.", "Španělština", "Ruština", "Japonština", "Čeština", "Slovenšt."]
@@ -825,6 +864,18 @@ elif page_idx == 6:
     with tab4:
         title_corr = "AI najde korelace, ale nerozumí kauzalitě" if L == "cs" else "AI Finds Correlations But Does Not Understand Causation"
         st.markdown(f"### {title_corr}")
+        if L == "cs":
+            st.markdown("""
+**Korelace** = dvě věci se vyskytují společně. **Kauzalita** = jedna věc způsobuje druhou.
+
+AI model vidí jen korelace v datech — nerozumí mechanismům. Když řekne "A způsobuje B", ve skutečnosti říká "v mých datech se A a B často vyskytují společně". Které z následujících korelací jsou kauzální?
+            """)
+        else:
+            st.markdown("""
+**Correlation** = two things occur together. **Causation** = one thing causes the other.
+
+AI models only see correlations in data — they don't understand mechanisms. When it says "A causes B", it actually means "in my data, A and B often co-occur". Which of these correlations are causal?
+            """)
         corrs = [
             (("Spotřeba zmrzliny ↔ utonutí" if L == "cs" else "Ice cream sales ↔ drownings"), 0.87, False, ("Obojí způsobuje horko" if L == "cs" else "Both caused by hot weather")),
             (("Azbest ↔ mesotheliom" if L == "cs" else "Asbestos ↔ mesothelioma"), 0.92, True, ("Prokázaná kauzalita" if L == "cs" else "Proven causation")),
@@ -840,6 +891,11 @@ elif page_idx == 6:
                 c3.success(f"✅ {'Kauzální' if L == 'cs' else 'Causal'} — {expl}")
             else:
                 c3.error(f"❌ {'Ne-kauzální' if L == 'cs' else 'Non-causal'} — {expl}")
+
+        if L == "cs":
+            st.info("**Pro výzkum:** NIKDY nepřijímejte kauzální tvrzení AI bez ověření mechanismu. AI je výborná na hledání korelací — ale kauzalitu musíte posoudit vy jako odborník.")
+        else:
+            st.info("**For research:** NEVER accept causal claims from AI without verifying the mechanism. AI is great at finding correlations — but causation must be judged by you as the expert.")
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -904,8 +960,24 @@ Enter text and see how much it would cost across models. Try rewriting in Englis
 
     if L == "cs":
         st.caption("Ceny jsou přibližné, platné k březnu 2026. Skutečné ceny závisí na konkrétním API plánu.")
+        st.markdown("""
+---
+#### Kdy se platí za tokeny?
+- **API přístup** (pro programátory a aplikace) — platíte za každý token
+- **Předplatné** (ChatGPT Plus, Claude Pro, Gemini Advanced) — měsíční paušál (~$20/měsíc), ale s limity na počet zpráv
+- **Zdarma** — omezený přístup, starší modely, nižší limity
+- **MU nástroje** (Copilot, Gemini přes Workspace) — platí univerzita, pro vás zdarma
+        """)
     else:
         st.caption("Prices are approximate as of March 2026. Actual prices depend on your API plan.")
+        st.markdown("""
+---
+#### When do you pay per token?
+- **API access** (for developers and applications) — you pay per token
+- **Subscription** (ChatGPT Plus, Claude Pro, Gemini Advanced) — monthly flat rate (~$20/month), but with message limits
+- **Free tier** — limited access, older models, lower limits
+- **MU tools** (Copilot, Gemini via Workspace) — paid by the university, free for you
+        """)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -993,6 +1065,7 @@ The context window has a **token limit**. Once exceeded, older parts of the conv
 - **Český text zabere ~1.5-2x víc tokenů** než anglický se stejným obsahem
 - Kontextové okno zahrnuje **vše**: systémový prompt + historie + váš vstup + výstup modelu
 - Pokud nahrajete 200stránkový dokument, zbude méně místa na konverzaci
+- **"Zapomínání" neznamená smazání** — model starší části konverzace komprimuje nebo ořízne. Proto může ztratit detaily z dřívějších zpráv.
         """)
     else:
         st.markdown(f"""
@@ -1001,6 +1074,7 @@ The context window has a **token limit**. Once exceeded, older parts of the conv
 - **Czech text takes ~1.5-2x more tokens** than English with the same content
 - Context window includes **everything**: system prompt + history + your input + model output
 - If you upload a 200-page document, less room remains for conversation
+- **"Forgetting" doesn't mean deletion** — the model compresses or truncates older parts. That's why it may lose details from earlier messages.
         """)
 
 
