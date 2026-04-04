@@ -7,6 +7,7 @@ Spuštění: streamlit run app.py
 import streamlit as st
 import math
 import random
+import tiktoken
 
 # ── Konfigurace stránky ──────────────────────────────────────────────────
 st.set_page_config(
@@ -32,6 +33,7 @@ page = st.sidebar.radio(
         "4. Halucinace — kvíz",
         "5. Prompting",
         "6. Bias v datech",
+        "📋 Cheat Sheet",
     ],
 )
 
@@ -92,60 +94,35 @@ elif page == "1. Tokenizace":
     st.markdown("""
     **Tokenizace** je proces rozdělení textu na menší kousky (tokeny),
     které model zpracovává. Model nevidí slova ani písmena — vidí tokeny.
-    """)
 
-    # Slovníky
-    VOCAB_EN = [
-        "the", "ing", "tion", "er", "ed", "al", "an", "or", "en", "es",
-        "re", "on", "at", "is", "it", "in", "to", "of", "th", "he",
-        "ar", "ou", "st", "nd", "ion", "ment", "ness", "able", "ful",
-        "un", "pre", "dis", "ly", "ous", "ive", "ity", " ", ".", ",",
-        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l",
-        "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
-    ]
-    VOCAB_CS = [
-        "ní", "ov", "ost", "ná", "ně", "ský", "ská", "ské", "ho", "ch",
-        "je", "se", "na", "po", "za", "př", "pro", "pre", "ne", "do",
-        "od", "ve", "ko", "ro", "lo", "to", "no", "mo", "vo", "st",
-        "ek", "ík", "ám", "ém", "ím", "ům", "ou", "ej", "aj",
-        " ", ".", ",", "á", "é", "í", "ó", "ú", "ý", "ě", "ř", "ž",
-        "š", "č", "ť", "ď", "ň",
-        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l",
-        "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
-    ]
+    Tato ukázka používá **skutečný tokenizer** (`o200k_base`) — stejný,
+    jaký používají modely GPT. Slovník obsahuje ~200 000 tokenů.
+    Běžná anglická slova jsou často **1 token**, české tvary se rozpadají na více kousků.
+    """)
 
     COLORS = [
         "#4CAF50", "#2196F3", "#FF9800", "#9C27B0", "#00BCD4", "#F44336",
         "#8BC34A", "#3F51B5", "#FFEB3B", "#E91E63", "#009688", "#FF5722",
     ]
 
-    def simple_tokenize(text, vocab):
-        tokens = []
-        text_lower = text.lower()
-        i = 0
-        while i < len(text_lower):
-            best_match = None
-            best_len = 0
-            for token in vocab:
-                if text_lower[i:i+len(token)] == token and len(token) > best_len:
-                    best_match = token
-                    best_len = len(token)
-            if best_match:
-                tokens.append(text[i:i+best_len])
-                i += best_len
-            else:
-                tokens.append(text[i])
-                i += 1
-        return tokens
+    @st.cache_resource
+    def get_encoder():
+        return tiktoken.get_encoding("o200k_base")
+
+    enc = get_encoder()
+
+    def real_tokenize(text):
+        token_ids = enc.encode(text)
+        return [enc.decode([tid]) for tid in token_ids]
 
     def render_tokens(tokens):
-        html = '<div style="line-height: 2.2; margin: 10px 0;">'
+        html = '<div style="line-height: 2.4; margin: 10px 0;">'
         for i, token in enumerate(tokens):
             color = COLORS[i % len(COLORS)]
-            display = token.replace(" ", "⎵")
+            display = token.replace(" ", "⎵").replace("\n", "↵")
             html += (
                 f'<span style="background-color: {color}; color: white; '
-                f'padding: 3px 6px; margin: 2px; border-radius: 4px; '
+                f'padding: 4px 8px; margin: 2px; border-radius: 4px; '
                 f'font-family: monospace; font-size: 14px; display: inline-block;">'
                 f'{display}</span>'
             )
@@ -161,8 +138,8 @@ elif page == "1. Tokenizace":
     with col2:
         cs_text = st.text_input("Český text:", "Environmentální kontaminace byla prozkoumána.")
 
-    en_tokens = simple_tokenize(en_text, VOCAB_EN)
-    cs_tokens = simple_tokenize(cs_text, VOCAB_CS)
+    en_tokens = real_tokenize(en_text)
+    cs_tokens = real_tokenize(cs_text)
 
     col1, col2 = st.columns(2)
     with col1:
@@ -185,25 +162,35 @@ elif page == "1. Tokenizace":
     terms = [
         ("polychlorinated biphenyls", "polychlorované bifenyly"),
         ("persistent organic pollutants", "perzistentní organické polutanty"),
-        ("endocrine disruptors", "endokrinní disruptory"),
-        ("heavy metals in soil", "těžké kovy v půdě"),
+        ("endocrine disruptors in drinking water", "endokrinní disruptory v pitné vodě"),
+        ("heavy metals in soil samples", "těžké kovy v půdních vzorcích"),
+        ("per- and polyfluoroalkyl substances", "per- a polyfluoralkylové látky"),
     ]
     data = []
     for en, cs in terms:
-        en_t = len(simple_tokenize(en, VOCAB_EN))
-        cs_t = len(simple_tokenize(cs, VOCAB_CS))
+        en_t = len(real_tokenize(en))
+        cs_t = len(real_tokenize(cs))
         data.append({"Termín EN": en, "Tokeny EN": en_t, "Termín CS": cs, "Tokeny CS": cs_t, "Poměr": f"{cs_t/en_t:.1f}x"})
 
     st.dataframe(data, use_container_width=True)
+
+    # Počítání písmen
+    st.markdown("### Proč AI špatně počítá písmena")
+    word = st.text_input("Zadejte slovo:", "strawberry")
+    if word:
+        tokens = real_tokenize(word)
+        st.markdown(render_tokens(tokens), unsafe_allow_html=True)
+        st.markdown(f"Model vidí **{len(tokens)} token(y)**, ne **{len(word)} písmen**. Tokeny: `{tokens}`")
 
     st.markdown("""
     ### Proč na tom záleží?
     | Aspekt | Důsledek |
     |--------|----------|
-    | **Cena** | Platíte za tokeny — čeština stojí víc |
+    | **Cena** | Platíte za tokeny — čeština stojí o ~50-100 % víc |
     | **Kontext** | Kontextové okno má limit — čeština zabere víc místa |
-    | **Kvalita** | Model lépe rozumí častějším tokenům (anglickým) |
-    | **Aritmetika** | Model nevidí písmena, proto špatně počítá |
+    | **Kvalita** | `environmental` = 1 token (model zná dobře), `environmentální` = 2+ tokenů |
+    | **Aritmetika** | Model nevidí písmena, vidí tokeny — proto špatně počítá |
+    | **Vyhledávání** | České odborné termíny se rozpadají na kousky, mohou ztratit specifický význam |
     """)
 
 
@@ -794,4 +781,188 @@ elif page == "6. Bias v datech":
         st.info("""
         **Pro AI je korelace i kauzalita jen "co se vyskytuje spolu v datech".**
         Model nerozumí mechanismům. NIKDY nepřijímejte kauzální tvrzení AI bez ověření.
+        """)
+
+
+# =====================================================================
+#  CHEAT SHEET
+# =====================================================================
+elif page == "\U0001f4cb Cheat Sheet":
+    st.title("\U0001f4cb Cheat Sheet -- Praktická reference")
+    st.markdown("Tuto stránku si **uložte do záložek** -- obsahuje vše podstatné na jednom místě.")
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "\U0001f6e0\ufe0f Nástroje",
+        "\U0001f4d0 PROMPT Framework",
+        "\u2705 Checklist",
+        "\U0001f4dd Jak deklarovat AI",
+        "\u26a0\ufe0f Časté chyby",
+    ])
+
+    with tab1:
+        st.markdown("""
+        ### Konverzační AI
+
+        | Nástroj | Model | Kontext | Silné stránky |
+        |---------|-------|---------|---------------|
+        | **ChatGPT** | GPT-5.4 | až 1M tokenů | Univerzální, kód, multimodální |
+        | **Claude** | Opus/Sonnet 4.6 | až 1M tokenů | Dlouhé texty, etika, kód |
+        | **Gemini** | Gemini 3.1 PRO | až 1M tokenů | Google integrace, video |
+        | **Copilot** | GPT-5.2/5.3 | 128k-400k | Office 365 integrace |
+
+        ### AI vyhledávání (akademické)
+
+        | Nástroj | Typ | Klíčová vlastnost | Zdarma? |
+        |---------|-----|-------------------|---------|
+        | **Perplexity** | AI vyhledávač | Vždy RAG, cituje zdroje | Limitovaně |
+        | **Scite** | Akademický | Smart Citations | Limitovaně |
+        | **Elicit** | Akademický | Extrakce dat z článků | Limitovaně |
+        | **Consensus** | Akademický | Syntéza vědeckých závěrů | Limitovaně |
+        | **Semantic Scholar** | Akademický | Sémantické hledání, open access | Ano |
+        | **NotebookLM** | Práce s texty | Nahrané dokumenty jako zdroj | Ano |
+        | **Scopus AI** | Databázový | RAG nad Scopus | Přes MU |
+        | **WOS Research Assis.** | Databázový | Generování dotazů z NL | Přes MU |
+
+        ### Na MU máte k dispozici
+
+        | Nástroj | Přístup | Poznámka |
+        |---------|---------|----------|
+        | **MS Copilot Chat** | Všichni na MU | GPT 5.3/5.4, OneDrive + email |
+        | **Gemini** | Google Workspace | Gemini 3/3.1 PRO |
+        | **AI as a Service** | e-Infra.cz (zaměstnanci) | Data neopouští e-INFRA |
+        """)
+
+    with tab2:
+        st.markdown("### PROMPT Framework -- šablona ke kopírování")
+        st.code("""PURPOSE: [Co potřebujete -- konkrétní úloha]
+
+ROLE: [Kdo má AI být -- odbornost, perspektiva]
+
+OBJECTIVE: [Konkrétní, měřitelný výstup]
+
+METHOD: [Jak postupovat -- krok po kroku]
+
+PARAMETERS: [Formální požadavky -- délka, formát, omezení]
+
+TONE: [Styl komunikace -- akademický, stručný, pro koho]""", language=None)
+
+        st.markdown("""
+        ### Promptovací techniky -- kdy co použít
+
+        | Situace | Technika | Klíčová fráze |
+        |---------|----------|---------------|
+        | Jednoduchý dotaz | **Zero-shot** | Prostě se zeptejte |
+        | Výpočet / logika | **Chain of Thought** | "Ukaž mezikroky" |
+        | Rozhodování | **Tree of Thought** | "Prozkoumej 3 přístupy" |
+        | Komplexní úloha | **Dekompozice** | "Rozlož na kroky, začni krokem 1" |
+        | Kvalitní text | **Sebekritika** | "Zkritizuj a přepiš" |
+        | Nejistota | **Meta-prompting** | "Navrhni optimální prompt pro..." |
+        | Specifická perspektiva | **Role/Persona** | "Jsi [expert] s [X lety zkušeností]" |
+        | Strukturovaný výstup | **Scaffolding** | Připravte kostru, AI doplní |
+        | Kritické úlohy | **Self-consistency** | "Vyřeš 3 různými způsoby" |
+        """)
+
+        st.markdown("### Custom instructions -- šablona pro výzkumníka")
+        st.code("""Jsem výzkumník v oblasti [obor] na RECETOX, Masarykova univerzita.
+Pracuji s [specifikace].
+
+Pravidla:
+- Když cituješ zdroj, uveď DOI. Pokud si nejsi jistý, řekni.
+- Nebuď servilní. Neříkej "skvělá otázka".
+- Když tvrdím něco chybného, oprav mě.
+- U číselných dat vždy uveď jednotky a nejistotu.
+- Preferuj peer-reviewed zdroje.
+
+Tagy:
+<academic> -- přesnost, citace, APA formát
+<critic>   -- buď kritický a zpochybňuj
+<source>   -- ke každému tvrzení uveď zdroj
+<explain>  -- vysvětli jednoduše jako nejlepší učitel""", language=None)
+
+    with tab3:
+        st.markdown("""
+        ### Před použitím AI se zeptejte
+
+        - [ ] **Co potřebuji?** -- Definujte informační potřebu
+        - [ ] **Co už vím?** -- Oddělte vlastní znalost od AI asistence
+        - [ ] **Jaký nástroj?** -- Konverzační AI, AI vyhledávání, nebo specializovaný nástroj?
+        - [ ] **Jsou data citlivá?** -- Nepublikovaná data, pacienti -> e-Infra / lokální AI
+
+        ### Po obdržení odpovědi (SMELL checklist)
+
+        | Test | Otázka |
+        |------|--------|
+        | **S** -- Smell test | Zní to rozumně, nebo jako generická fráze? |
+        | **M** -- Math / Numbers | Jsou čísla realistická? Dávají smysl v kontextu? |
+        | **E** -- Evidence | Existují uvedené zdroje? Lze je dohledat? Sedí DOI? |
+        | **L** -- Logic | Následují argumenty logicky? Nejsou tam protimluvy? |
+        | **L** -- Limits | Spadá to do znalostí modelu? Není to za knowledge cutoff? |
+
+        ### Další kontroly
+
+        - [ ] **Expert gut** -- Co by řekl kolega z oboru?
+        - [ ] **Challenge** -- Zeptejte se AI: "Jsi si jistá? Uveď konkrétní zdroj."
+        - [ ] **Cross-check** -- Ověřte klíčová tvrzení v jiném modelu nebo primárním zdroji
+        - [ ] **Unit check** -- Souhlasí jednotky? (ug/L vs. mg/kg, ppm vs. ppb)
+        """)
+
+    with tab4:
+        st.markdown("""
+        ### Instrument vs. Interpreter -- co deklarovat
+
+        | Úroveň | Příklad | Co uvést |
+        |--------|---------|----------|
+        | **Instrument** | Korektura, formátování, překlad | Není třeba deklarovat |
+        | **Instrument (výzkum)** | Kódování dat, výběr metody, rešerše | Poznámka v metodice |
+        | **Šedá zóna** | AI navrhuje, já přijímám a zodpovídám | Uvést v metodice + limitacích |
+        | **Interpreter** | AI formuluje závěry z dat | Metodika + limitace + zvážit přijatelnost |
+
+        ### Vzorová formulace pro metody
+        """)
+
+        st.code("""AI-assisted analysis was conducted using [model name, version].
+The tool was used for [specific tasks: e.g., literature screening,
+code generation, data visualization]. All AI-generated outputs
+were independently verified by the authors against [primary sources /
+original data / established methods]. The authors take full
+responsibility for the accuracy of the final results.""", language=None)
+
+        st.markdown("""
+        ### Klíčové otázky
+
+        > *Kdo tu rozhoduje -- já nebo AI?*
+
+        > *Umím výstup obhájit vlastními slovy?*
+
+        > *Byl/a bych v pohodě, kdyby kolegové věděli přesně jak jsem AI použil/a?*
+
+        ### MUNI politika
+
+        Masarykova univerzita vyžaduje **transparentní deklaraci** použití AI.
+        Nezveřejněné použití AI se posuzuje jako plagiát.
+        """)
+
+    with tab5:
+        st.markdown("""
+        ### Top 10 chyb výzkumníků s AI
+
+        | # | Chyba | Jak se bránit |
+        |---|-------|---------------|
+        | 1 | **Citování AI jako zdroje** | AI není zdroj -- dohledejte primární literaturu |
+        | 2 | **Vymyšlené reference** | Ověřte KAŽDÝ DOI, autora, časopis |
+        | 3 | **Chybné jednotky** | AI míchá ug/L vs. mg/kg, ppm vs. ppb |
+        | 4 | **Vymyšlená statistika** | Nedůvěřujte p-hodnotám a CI z AI |
+        | 5 | **Knowledge cutoff** | Model nezná nedávné publikace a legislativu |
+        | 6 | **Automation bias** | Nekontrolujete AI-generovaný kód |
+        | 7 | **Ztráta porozumění** | Používáte statistiku, které nerozumíte |
+        | 8 | **Nereprodukovatelnost** | Stejný prompt = jiná odpověď jindy |
+        | 9 | **Únik dat** | Nepublikovaná data v komerčním API |
+        | 10 | **Homogenizace** | "AI hlas" -- recenzenti to poznají |
+
+        ### Specificky pro environmentální výzkum
+
+        - **Chemické názvy**: AI může zaměnit IUPAC názvy, CAS čísla nebo sm��si
+        - **Regulatorní limity**: Limity se liší podle jurisdikce a matrice -- AI je míchá
+        - **Kauzální tvrzení**: "X způsobuje Y" z AI = korelace v datech, ne mechanismus
+        - **Záznamy o expozici**: Nikdy nevkládejte osobní data subjektů do komerčních AI
         """)
